@@ -25,6 +25,25 @@ class ImageSubscriber(Node):
         self.vehicle.wait_heartbeat()
         print("Connected to system:", self.vehicle.target_system, ", component:", self.vehicle.target_component)
 
+        # 設置相機內部參數
+        self.camera_matrix = np.array([[530.8269276712998, 0.0, 320.5],
+                                        [0.0, 530.8269276712998, 240.5],
+                                        [0.0, 0.0, 1.0]], dtype=np.float32)
+        self.dist_coeff = np.array([0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
+
+        # 獲取預定義的 ArUco 字典
+        self.aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_4X4_100)
+
+        # 設定 ArUco 檢測參數
+        self.parameters = aruco.DetectorParameters()
+        self.parameters.adaptiveThreshWinSizeMin = 3
+        self.parameters.adaptiveThreshWinSizeMax = 23
+        self.parameters.adaptiveThreshWinSizeStep = 10
+        self.parameters.minMarkerPerimeterRate = 0.03
+        self.parameters.maxMarkerPerimeterRate = 4.0
+        self.parameters.minDistanceToBorder = 5
+        self.parameters.adaptiveThreshConstant = -3  # 減少亮度，突出標記
+
         """
 
         # 清除原有任務
@@ -47,11 +66,12 @@ class ImageSubscriber(Node):
         self.arm()
 
         """
+        self.flight_mode_name = "None"
         # 其他參數設置
         self.id_to_find_16 = 16
         self.id_to_find_0 = 0
-        self.marker_size_16 = 500  # 單位公分
-        self.marker_size_0 = 100    # 單位公分
+        self.marker_size_16 = 100  # 單位公分
+        self.marker_size_0 = 10    # 單位公分
     
     def listener_callback(self, msg):
 
@@ -69,28 +89,18 @@ class ImageSubscriber(Node):
             # 使用 CvBridge 將 ROS 影像訊息轉換為 OpenCV 格式
             current_frame = self.br.imgmsg_to_cv2(msg)
 
-            # 設置相機內部參數
-            self.camera_matrix = np.array([[530.8269276712998, 0.0, 320.5],
-                                        [0.0, 530.8269276712998, 240.5],
-                                        [0.0, 0.0, 1.0]], dtype=np.float32)
-            self.dist_coeff = np.array([0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
-                
-            # 獲取預定義的 ArUco 字典
-            aruco_dict = aruco.getPredefinedDictionary(aruco.DICT_4X4_100)
-
-            # 設定 ArUco 檢測參數
-            parameters = aruco.DetectorParameters()
-            parameters.adaptiveThreshWinSizeMin = 3
-            parameters.adaptiveThreshWinSizeMax = 23
-            parameters.adaptiveThreshWinSizeStep = 10
-            parameters.minMarkerPerimeterRate = 0.03
-            parameters.maxMarkerPerimeterRate = 4.0
-
             # 將畫面轉成灰階
             gray = cv2.cvtColor(current_frame, cv2.COLOR_BGR2GRAY)
 
+            # 增強影像對比度
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            gray = clahe.apply(gray)
+
+            # 影像去噪
+            gray = cv2.GaussianBlur(gray, (5, 5), 0)
+
             #找到圖像中的所有aruco標記
-            corners, ids, rejected = aruco.detectMarkers(image=gray, dictionary=aruco_dict, parameters=parameters)
+            corners, ids, rejected = aruco.detectMarkers(image=gray, dictionary=self.aruco_dict, parameters=self.parameters)
 
             if ids is not None:
                 for i, self.id in enumerate(ids):
